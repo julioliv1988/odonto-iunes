@@ -1,56 +1,72 @@
-from flask import Blueprint, render_template, request, redirect, url_for, current_app
-from .database import get_db
+from flask import Flask, render_template, request, redirect, url_for, session
+import sqlite3
+from werkzeug.security import check_password_hash
 
-main = Blueprint("main", __name__)
 
-@main.route("/")
-def index():
-    return render_template("index.html")
+app = Flask(__name__)
+app.secret_key = "supersecretkey"
 
-@main.route("/patients", methods=["GET", "POST"])
-def patients():
-    conn = get_db(current_app)
-    cursor = conn.cursor()
 
-    if request.method == "POST":
-        name = request.form["name"]
-        phone = request.form["phone"]
-        cursor.execute(
-            "INSERT INTO patients (name, phone) VALUES (?, ?)",
-            (name, phone)
-        )
-        conn.commit()
+DB = "mydatabase.db"
 
-    patients = cursor.execute("SELECT * FROM patients").fetchall()
-    conn.close()
-    return render_template("patients.html", patients=patients)
 
-@main.route("/appointments", methods=["GET", "POST"])
-def appointments():
-    conn = get_db(current_app)
-    cursor = conn.cursor()
+def get_db():
+return sqlite3.connect(DB)
 
-    if request.method == "POST":
-        patient_id = request.form["patient_id"]
-        date = request.form["date"]
-        reason = request.form["reason"]
 
-        cursor.execute(
-            "INSERT INTO appointments (patient_id, date, reason) VALUES (?, ?, ?)",
-            (patient_id, date, reason)
-        )
-        conn.commit()
+@app.route("/")
+def home():
+return render_template("home.html")
 
-    patients = cursor.execute("SELECT * FROM patients").fetchall()
-    appointments = cursor.execute("""
-        SELECT a.id, p.name, a.date, a.reason
-        FROM appointments a
-        JOIN patients p ON a.patient_id = p.id
-    """).fetchall()
 
-    conn.close()
-    return render_template(
-        "appointments.html",
-        patients=patients,
-        appointments=appointments
-    )
+@app.route("/patient", methods=["GET", "POST"])
+def patient_login():
+if request.method == "POST":
+username = request.form["username"]
+password = request.form["password"]
+
+
+conn = get_db()
+cursor = conn.cursor()
+cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+user = cursor.fetchone()
+conn.close()
+
+
+if user and check_password_hash(user[1], password):
+session["user_id"] = user[0]
+session["username"] = username
+return redirect(url_for("welcome"))
+
+
+return "Invalid credentials"
+
+
+return render_template("patient_login.html")
+
+
+@app.route("/welcome")
+def welcome():
+if "username" not in session:
+return redirect(url_for("patient_login"))
+return render_template("welcome.html", username=session["username"])
+
+
+@app.route("/personal-info")
+def personal_info():
+return render_template("personal_info.html")
+
+
+@app.route("/schedule")
+def schedule():
+return render_template("schedule.html")
+
+
+@app.route("/logout")
+def logout():
+session.clear()
+return redirect(url_for("home"))
+
+
+if __name__ == "__main__":
+app.run(debug=True)
